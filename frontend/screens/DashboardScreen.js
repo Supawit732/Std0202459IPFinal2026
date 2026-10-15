@@ -675,20 +675,20 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 12, fontWeight: '600' },
   actions: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     marginTop: spacing.md,
     paddingTop: spacing.sm,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
   ghostBtn: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 6,
     paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
   },
-  ghostText: { fontSize: 13, fontWeight: '600', color: colors.accent, flexShrink: 1 },
+  ghostText: { fontSize: 13, fontWeight: '600', color: colors.accent },
 
   // empty state
   emptyState: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
