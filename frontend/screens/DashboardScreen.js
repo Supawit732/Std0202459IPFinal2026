@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -32,6 +32,12 @@ export default function DashboardScreen({ navigation, route }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [clusters, setClusters] = useState(null); // null = not analyzed yet
   const [clusterMessage, setClusterMessage] = useState('');
+
+  const summary = useMemo(() => {
+    const active = employees.filter((e) => e.status === 'Active').length;
+    const payroll = employees.reduce((sum, e) => sum + (Number(e.salary) || 0), 0);
+    return { total: employees.length, active, onLeave: employees.length - active, payroll };
+  }, [employees]);
 
   const fetchEmployees = useCallback(async () => {
     try {
@@ -161,6 +167,25 @@ export default function DashboardScreen({ navigation, route }) {
         </TouchableOpacity>
       </View>
 
+      <View style={styles.summaryRow}>
+        <View style={styles.summaryBox}>
+          <Text style={styles.summaryValue}>{summary.total}</Text>
+          <Text style={styles.summaryLabel}>Total</Text>
+        </View>
+        <View style={styles.summaryBox}>
+          <Text style={[styles.summaryValue, { color: '#16a34a' }]}>{summary.active}</Text>
+          <Text style={styles.summaryLabel}>Active</Text>
+        </View>
+        <View style={styles.summaryBox}>
+          <Text style={[styles.summaryValue, { color: '#f59e0b' }]}>{summary.onLeave}</Text>
+          <Text style={styles.summaryLabel}>On Leave</Text>
+        </View>
+      </View>
+      <View style={styles.payrollBox}>
+        <Text style={styles.summaryLabel}>Total monthly payroll</Text>
+        <Text style={styles.payrollValue}>{formatMoney(summary.payroll)}</Text>
+      </View>
+
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>{editingId ? 'Edit Employee' : 'Add Employee'}</Text>
         <TextInput style={styles.input} placeholder="Name" value={name} onChangeText={setName} />
@@ -285,6 +310,28 @@ const styles = StyleSheet.create({
   heading: { fontSize: 20, fontWeight: '700', color: '#1f2d3d' },
   logoutBtn: { backgroundColor: '#6b7280', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
   logoutText: { color: '#fff', fontWeight: '600' },
+  summaryRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  summaryBox: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e3e8ef',
+  },
+  summaryValue: { fontSize: 22, fontWeight: '700', color: '#1f2d3d' },
+  summaryLabel: { fontSize: 12, color: '#6b7280' },
+  payrollBox: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e3e8ef',
+    alignItems: 'center',
+  },
+  payrollValue: { fontSize: 22, fontWeight: '700', color: '#1d4ed8' },
   card: {
     backgroundColor: '#fff',
     borderRadius: 10,
