@@ -219,6 +219,9 @@ export default function DashboardScreen({ navigation, route }) {
   const cycleSort = () => setSortDir((d) => (d === null ? 'asc' : d === 'asc' ? 'desc' : null));
   const sortIcon = sortDir === 'asc' ? 'arrow-up' : sortDir === 'desc' ? 'arrow-down' : 'sliders';
 
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'long',
@@ -233,7 +236,7 @@ export default function DashboardScreen({ navigation, route }) {
       {/* Header */}
       <View style={styles.headerRow}>
         <View style={styles.flexShrink}>
-          <Text style={type.title}>Good morning, Admin</Text>
+          <Text style={type.title}>{greeting}, Admin</Text>
           <Text style={styles.date}>{today}</Text>
         </View>
         <TouchableOpacity
