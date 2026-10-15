@@ -30,6 +30,10 @@ export default function DashboardScreen({ navigation, route }) {
   const [editingId, setEditingId] = useState(null);
 
   const [analyzing, setAnalyzing] = useState(false);
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All'); // All | Active | On Leave
+  const [sortDir, setSortDir] = useState(null); // null | 'asc' | 'desc'
+
   const [clusters, setClusters] = useState(null); // null = not analyzed yet
   const [clusterMessage, setClusterMessage] = useState('');
 
@@ -38,6 +42,19 @@ export default function DashboardScreen({ navigation, route }) {
     const payroll = employees.reduce((sum, e) => sum + (Number(e.salary) || 0), 0);
     return { total: employees.length, active, onLeave: employees.length - active, payroll };
   }, [employees]);
+
+  const visibleEmployees = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let list = employees.filter(
+      (e) =>
+        (statusFilter === 'All' || e.status === statusFilter) &&
+        (!q || e.name.toLowerCase().includes(q) || e.position.toLowerCase().includes(q))
+    );
+    if (sortDir) {
+      list = [...list].sort((a, b) => (sortDir === 'asc' ? a.salary - b.salary : b.salary - a.salary));
+    }
+    return list;
+  }, [employees, query, statusFilter, sortDir]);
 
   const fetchEmployees = useCallback(async () => {
     try {
@@ -161,7 +178,7 @@ export default function DashboardScreen({ navigation, route }) {
   const renderHeader = () => (
     <View>
       <View style={styles.topRow}>
-        <Text style={styles.heading}>Employees ({employees.length})</Text>
+        <Text style={styles.heading}>Employees ({visibleEmployees.length}/{employees.length})</Text>
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
@@ -250,6 +267,40 @@ export default function DashboardScreen({ navigation, route }) {
           )}
         </View>
       )}
+
+      <TextInput
+        style={styles.input}
+        placeholder="Search by name or position"
+        value={query}
+        onChangeText={setQuery}
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+      <View style={styles.chipRow}>
+        {['All', 'Active', 'On Leave'].map((f) => (
+          <TouchableOpacity
+            key={f}
+            style={[styles.chip, statusFilter === f && styles.chipActive]}
+            onPress={() => setStatusFilter(f)}
+          >
+            <Text style={[styles.chipText, statusFilter === f && styles.chipTextActive]}>{f}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <View style={styles.chipRow}>
+        {[
+          ['asc', 'Salary ↑'],
+          ['desc', 'Salary ↓'],
+        ].map(([dir, label]) => (
+          <TouchableOpacity
+            key={dir}
+            style={[styles.chip, sortDir === dir && styles.chipActive]}
+            onPress={() => setSortDir(sortDir === dir ? null : dir)}
+          >
+            <Text style={[styles.chipText, sortDir === dir && styles.chipTextActive]}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
     </View>
   );
 
@@ -289,11 +340,13 @@ export default function DashboardScreen({ navigation, route }) {
         <ActivityIndicator size="large" style={{ marginTop: 40 }} />
       ) : (
         <FlatList
-          data={employees}
+          data={visibleEmployees}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
-          ListHeaderComponent={renderHeader}
-          ListEmptyComponent={<Text style={styles.empty}>No employees found.</Text>}
+          ListHeaderComponent={renderHeader()}
+          ListEmptyComponent={<Text style={styles.empty}>
+              {employees.length === 0 ? 'No employees found.' : 'No employees match your filters.'}
+            </Text>}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.list}
@@ -310,6 +363,16 @@ const styles = StyleSheet.create({
   heading: { fontSize: 20, fontWeight: '700', color: '#1f2d3d' },
   logoutBtn: { backgroundColor: '#6b7280', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
   logoutText: { color: '#fff', fontWeight: '600' },
+  chipRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  chip: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: '#e5e7eb',
+  },
+  chipActive: { backgroundColor: '#2563eb' },
+  chipText: { color: '#374151', fontWeight: '600', fontSize: 13 },
+  chipTextActive: { color: '#fff' },
   summaryRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   summaryBox: {
     flex: 1,
