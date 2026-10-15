@@ -36,6 +36,8 @@ export default function DashboardScreen({ navigation, route }) {
 
   const [clusters, setClusters] = useState(null); // null = not analyzed yet
   const [clusterMessage, setClusterMessage] = useState('');
+  const [iterations, setIterations] = useState(null);
+  const [expandedTier, setExpandedTier] = useState(null);
 
   const summary = useMemo(() => {
     const active = employees.filter((e) => e.status === 'Active').length;
@@ -166,6 +168,8 @@ export default function DashboardScreen({ navigation, route }) {
       const data = await apiRequest('/api/employees/salary-clusters', { token });
       setClusters(Array.isArray(data.clusters) ? data.clusters : []);
       setClusterMessage(data.message || '');
+      setIterations(typeof data.iterations === 'number' ? data.iterations : null);
+      setExpandedTier(null);
     } catch (e) {
       notify('Analysis Failed', e.message);
     } finally {
@@ -254,16 +258,60 @@ export default function DashboardScreen({ navigation, route }) {
           {clusters.length === 0 ? (
             <Text style={styles.empty}>{clusterMessage || 'No salary data to analyze.'}</Text>
           ) : (
-            clusters.map((c) => (
-              <View key={c.group} style={styles.clusterCard}>
-                <Text style={styles.clusterTitle}>{c.group}</Text>
-                <Text style={styles.clusterLine}>Employees: {c.count}</Text>
-                <Text style={styles.clusterLine}>Average salary: {formatMoney(c.centroid)}</Text>
-                <Text style={styles.clusterLine}>
-                  Range: {c.min == null ? '-' : formatMoney(c.min)} – {c.max == null ? '-' : formatMoney(c.max)}
-                </Text>
+            <>
+              {clusters.map((c) => {
+                const expanded = expandedTier === c.group;
+                return (
+                  <TouchableOpacity
+                    key={c.group}
+                    style={styles.clusterCard}
+                    activeOpacity={0.8}
+                    onPress={() => setExpandedTier(expanded ? null : c.group)}
+                  >
+                    <Text style={styles.clusterTitle}>
+                      {c.group} {expanded ? '▲' : '▼'}
+                    </Text>
+                    <Text style={styles.clusterLine}>Employees: {c.count}</Text>
+                    <Text style={styles.clusterLine}>Average salary: {formatMoney(c.centroid)}</Text>
+                    <Text style={styles.clusterLine}>
+                      Range: {c.min == null ? '-' : formatMoney(c.min)} – {c.max == null ? '-' : formatMoney(c.max)}
+                    </Text>
+                    {expanded && (
+                      <View style={styles.memberList}>
+                        {(c.members || []).length === 0 ? (
+                          <Text style={styles.clusterLine}>No members</Text>
+                        ) : (
+                          c.members.map((m, i) => (
+                            <Text key={`${m}-${i}`} style={styles.memberName}>
+                              • {m}
+                            </Text>
+                          ))
+                        )}
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+
+              <View style={styles.barCard}>
+                <Text style={styles.sectionTitle}>Average salary by tier</Text>
+                {clusters.map((c) => {
+                  const maxCentroid = Math.max(...clusters.map((x) => x.centroid), 1);
+                  return (
+                    <View key={c.group} style={styles.barRow}>
+                      <Text style={styles.barLabel}>{c.group}</Text>
+                      <View style={styles.barTrack}>
+                        <View style={[styles.barFill, { width: `${(c.centroid / maxCentroid) * 100}%` }]} />
+                      </View>
+                      <Text style={styles.barValue}>{formatMoney(c.centroid)}</Text>
+                    </View>
+                  );
+                })}
+                {iterations !== null && (
+                  <Text style={styles.iterText}>K-Means converged in {iterations} iteration(s)</Text>
+                )}
               </View>
-            ))
+            </>
           )}
         </View>
       )}
@@ -437,6 +485,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ddd6fe',
   },
+  memberList: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#ddd6fe' },
+  memberName: { color: '#374151', marginTop: 2 },
+  barCard: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#e3e8ef',
+  },
+  barRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  barLabel: { width: 52, fontSize: 12, color: '#374151' },
+  barTrack: { flex: 1, height: 14, backgroundColor: '#ede9fe', borderRadius: 7, overflow: 'hidden', marginHorizontal: 8 },
+  barFill: { height: 14, backgroundColor: '#7c3aed', borderRadius: 7 },
+  barValue: { width: 62, fontSize: 12, textAlign: 'right', color: '#374151' },
+  iterText: { fontSize: 12, color: '#6b7280', marginTop: 4 },
   clusterTitle: { fontSize: 16, fontWeight: '700', color: '#5b21b6', marginBottom: 4 },
   clusterLine: { color: '#374151', marginTop: 2 },
   empty: { textAlign: 'center', color: '#6b7280', marginVertical: 16 },

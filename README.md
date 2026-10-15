@@ -47,6 +47,14 @@ All `/api/employees*` routes need `Authorization: Bearer mock-jwt-token`.
 | POST   | `/api/login`                   | 200 token, 401 on bad credentials, 400 if missing  |
 | GET    | `/api/employees`               | list                                               |
 | POST   | `/api/employees`               | `{name, position, salary}` → 201, 400 on invalid   |
+| PUT    | `/api/employees/:id`           | edit `{name, position, salary}`; same validation as POST, 404 if unknown |
 | PUT    | `/api/employees/:id/status`    | toggle Active / On Leave, 404 if unknown           |
 | DELETE | `/api/employees/:id`           | 404 if unknown                                     |
-| GET    | `/api/employees/salary-clusters` | custom 1D K-Means (k=3) in `backend/kmeans.js`   |
+| GET    | `/api/employees/salary-clusters` | custom 1D K-Means (k=3) in `backend/kmeans.js`; returns `iterations` and per-tier `members` (names) |
+
+## App features
+
+- Login, then a Dashboard with a summary (total, Active / On Leave, monthly payroll).
+- Add, edit (Edit → Save/Cancel), toggle status and delete (with confirmation) employees.
+- Search by name/position, filter by status (All / Active / On Leave), sort by salary ascending/descending.
+- "Analyze Salary Structure": tier cards (tap a card to list its members) and a bar comparing tier averages.
