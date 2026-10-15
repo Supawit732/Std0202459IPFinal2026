@@ -19,9 +19,9 @@ export const colors = {
 
 // Tier tints of the accent, light -> dark. `text` is the readable color on top of `bg`.
 export const tierTints = [
-  { bg: '#E3EEEC', bar: '#7FB0AC', text: '#0F5C5A' },
-  { bg: '#C5DDDA', bar: '#3F8582', text: '#0B4543' },
-  { bg: '#0F5C5A', bar: '#0F5C5A', text: '#FFFFFF' },
+  { bg: '#E3EEEC', border: '#CFE2DF', text: '#0F5C5A', track: 'rgba(15,92,90,0.14)', fill: '#7FB0AC' },
+  { bg: '#C5DDDA', border: '#B0CFCB', text: '#0B4543', track: 'rgba(11,69,67,0.16)', fill: '#3F8582' },
+  { bg: '#0F5C5A', border: '#0F5C5A', text: '#FFFFFF', track: 'rgba(255,255,255,0.25)', fill: '#FFFFFF' },
 ];
 
 // Muted avatar palette (background, foreground)

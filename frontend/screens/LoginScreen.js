@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     height: 52,
   },
-  input: { flex: 1, fontSize: 15, color: colors.ink, height: '100%', outlineStyle: 'none' },
+  input: { flex: 1, fontSize: 15, color: colors.ink, height: '100%', ...Platform.select({ web: { outlineStyle: 'none' } }) },
   button: {
     backgroundColor: colors.accent,
     height: 52,

@@ -4,7 +4,9 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
@@ -12,28 +14,53 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import { apiRequest, notify } from '../api';
+import { avatarPalette, cardStyle, colors, radius, spacing, tierTints, type } from '../theme';
 
 const formatMoney = (n) => Number(n).toLocaleString('en-US');
 
+const initials = (name) =>
+  name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase();
+
+const avatarColors = (name) => {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return avatarPalette[h % avatarPalette.length];
+};
+
+// Map the i-th of n tiers onto the light -> dark teal tints.
+const tierTint = (i, n) => tierTints[n >= 3 ? i : n === 2 ? [0, 2][i] : 1];
+
+const webNoOutline = Platform.select({ web: { outlineStyle: 'none' } });
+
 export default function DashboardScreen({ navigation, route }) {
   const token = route.params?.token;
+  const insets = useSafeAreaInsets();
 
   const [employees, setEmployees] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const [formOpen, setFormOpen] = useState(false);
   const [name, setName] = useState('');
   const [position, setPosition] = useState('');
   const [salary, setSalary] = useState('');
   const [adding, setAdding] = useState(false); // true while add/save request is in flight
   const [editingId, setEditingId] = useState(null);
 
-  const [analyzing, setAnalyzing] = useState(false);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All'); // All | Active | On Leave
   const [sortDir, setSortDir] = useState(null); // null | 'asc' | 'desc'
 
+  const [analyzing, setAnalyzing] = useState(false);
   const [clusters, setClusters] = useState(null); // null = not analyzed yet
   const [clusterMessage, setClusterMessage] = useState('');
   const [iterations, setIterations] = useState(null);
@@ -91,11 +118,22 @@ export default function DashboardScreen({ navigation, route }) {
     setEditingId(null);
   };
 
+  const closeForm = () => {
+    resetForm();
+    setFormOpen(false);
+  };
+
+  const openAdd = () => {
+    resetForm();
+    setFormOpen(true);
+  };
+
   const startEdit = (item) => {
     setEditingId(item.id);
     setName(item.name);
     setPosition(item.position);
     setSalary(String(item.salary));
+    setFormOpen(true);
   };
 
   const handleSubmit = async () => {
@@ -121,7 +159,7 @@ export default function DashboardScreen({ navigation, route }) {
         const data = await apiRequest('/api/employees', { method: 'POST', token, body });
         setEmployees((prev) => [...prev, data.data]);
       }
-      resetForm();
+      closeForm();
       setClusters(null); // previous analysis is now stale
     } catch (e) {
       notify('Error', e.message);
@@ -143,7 +181,6 @@ export default function DashboardScreen({ navigation, route }) {
     try {
       await apiRequest(`/api/employees/${id}`, { method: 'DELETE', token });
       setEmployees((prev) => prev.filter((e) => e.id !== id));
-      if (editingId === id) resetForm();
       setClusters(null);
     } catch (e) {
       notify('Error', e.message);
@@ -179,110 +216,115 @@ export default function DashboardScreen({ navigation, route }) {
 
   const handleLogout = () => navigation.replace('Login');
 
+  const cycleSort = () => setSortDir((d) => (d === null ? 'asc' : d === 'asc' ? 'desc' : null));
+  const sortIcon = sortDir === 'asc' ? 'arrow-up' : sortDir === 'desc' ? 'arrow-down' : 'sliders';
+
+  const today = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
+  const maxCentroid = clusters && clusters.length ? Math.max(...clusters.map((c) => c.centroid), 1) : 1;
+
   const renderHeader = () => (
     <View>
-      <View style={styles.topRow}>
-        <Text style={styles.heading}>Employees ({visibleEmployees.length}/{employees.length})</Text>
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-          <Text style={styles.logoutText}>Logout</Text>
+      {/* Header */}
+      <View style={styles.headerRow}>
+        <View style={styles.flexShrink}>
+          <Text style={type.title}>Good morning, Admin</Text>
+          <Text style={styles.date}>{today}</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={handleLogout}
+          accessibilityLabel="Logout"
+          activeOpacity={0.7}
+        >
+          <Feather name="log-out" size={20} color={colors.ink} />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.summaryRow}>
-        <View style={styles.summaryBox}>
-          <Text style={styles.summaryValue}>{summary.total}</Text>
-          <Text style={styles.summaryLabel}>Total</Text>
+      {/* Hero */}
+      <View style={styles.hero}>
+        <Text style={styles.heroLabel}>Total monthly payroll</Text>
+        <Text style={styles.heroValue}>{formatMoney(summary.payroll)}</Text>
+        <View style={styles.heroStats}>
+          {[
+            ['Total', summary.total],
+            ['Active', summary.active],
+            ['On Leave', summary.onLeave],
+          ].map(([label, value]) => (
+            <View key={label} style={styles.heroStat}>
+              <Text style={styles.heroStatValue}>{value}</Text>
+              <Text style={styles.heroStatLabel}>{label}</Text>
+            </View>
+          ))}
         </View>
-        <View style={styles.summaryBox}>
-          <Text style={[styles.summaryValue, { color: '#16a34a' }]}>{summary.active}</Text>
-          <Text style={styles.summaryLabel}>Active</Text>
-        </View>
-        <View style={styles.summaryBox}>
-          <Text style={[styles.summaryValue, { color: '#f59e0b' }]}>{summary.onLeave}</Text>
-          <Text style={styles.summaryLabel}>On Leave</Text>
-        </View>
-      </View>
-      <View style={styles.payrollBox}>
-        <Text style={styles.summaryLabel}>Total monthly payroll</Text>
-        <Text style={styles.payrollValue}>{formatMoney(summary.payroll)}</Text>
       </View>
 
+      {/* Salary insights */}
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>{editingId ? 'Edit Employee' : 'Add Employee'}</Text>
-        <TextInput style={styles.input} placeholder="Name" value={name} onChangeText={setName} />
-        <TextInput
-          style={styles.input}
-          placeholder="Position"
-          value={position}
-          onChangeText={setPosition}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Salary"
-          keyboardType="numeric"
-          value={salary}
-          onChangeText={setSalary}
-        />
+        <View style={styles.cardTitleRow}>
+          <Feather name="bar-chart-2" size={18} color={colors.accent} />
+          <Text style={type.section}>Salary insights</Text>
+        </View>
         <TouchableOpacity
-          style={[styles.primaryBtn, adding && styles.disabled]}
-          onPress={handleSubmit}
-          disabled={adding}
+          style={[styles.primaryBtn, analyzing && styles.disabled]}
+          onPress={handleAnalyze}
+          disabled={analyzing}
+          activeOpacity={0.85}
         >
-          {adding ? (
-            <ActivityIndicator color="#fff" />
+          {analyzing ? (
+            <ActivityIndicator color={colors.onAccent} />
           ) : (
-            <Text style={styles.btnText}>{editingId ? 'Save' : 'Add Employee'}</Text>
+            <Text style={styles.primaryBtnText}>Analyze Salary Structure</Text>
           )}
         </TouchableOpacity>
-        {editingId && (
-          <TouchableOpacity style={styles.cancelBtn} onPress={resetForm} disabled={adding}>
-            <Text style={styles.btnText}>Cancel</Text>
-          </TouchableOpacity>
-        )}
-      </View>
 
-      <TouchableOpacity
-        style={[styles.analyzeBtn, analyzing && styles.disabled]}
-        onPress={handleAnalyze}
-        disabled={analyzing}
-      >
-        {analyzing ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.btnText}>Analyze Salary Structure</Text>
-        )}
-      </TouchableOpacity>
-
-      {clusters !== null && (
-        <View style={styles.clusterWrap}>
-          {clusters.length === 0 ? (
-            <Text style={styles.empty}>{clusterMessage || 'No salary data to analyze.'}</Text>
+        {clusters !== null &&
+          (clusters.length === 0 ? (
+            <Text style={styles.emptyInline}>{clusterMessage || 'No salary data to analyze.'}</Text>
           ) : (
-            <>
-              {clusters.map((c) => {
+            <View style={styles.tiers}>
+              {clusters.map((c, i) => {
+                const tint = tierTint(i, clusters.length);
                 const expanded = expandedTier === c.group;
                 return (
                   <TouchableOpacity
                     key={c.group}
-                    style={styles.clusterCard}
-                    activeOpacity={0.8}
+                    style={[styles.tierCard, { backgroundColor: tint.bg, borderColor: tint.border }]}
+                    activeOpacity={0.85}
                     onPress={() => setExpandedTier(expanded ? null : c.group)}
                   >
-                    <Text style={styles.clusterTitle}>
-                      {c.group} {expanded ? '▲' : '▼'}
+                    <View style={styles.tierTop}>
+                      <Text style={[styles.tierName, { color: tint.text }]}>{c.group}</Text>
+                      <Text style={[styles.tierCount, { color: tint.text }]}>
+                        {c.count} {c.count === 1 ? 'employee' : 'employees'}
+                      </Text>
+                      <Feather name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={tint.text} />
+                    </View>
+                    <Text style={[styles.tierAvg, { color: tint.text }]}>{formatMoney(c.centroid)}</Text>
+                    <Text style={[styles.tierSub, { color: tint.text }]}>Average salary</Text>
+                    <Text style={[styles.tierRange, { color: tint.text }]}>
+                      Range {c.min == null ? '-' : formatMoney(c.min)} – {c.max == null ? '-' : formatMoney(c.max)}
                     </Text>
-                    <Text style={styles.clusterLine}>Employees: {c.count}</Text>
-                    <Text style={styles.clusterLine}>Average salary: {formatMoney(c.centroid)}</Text>
-                    <Text style={styles.clusterLine}>
-                      Range: {c.min == null ? '-' : formatMoney(c.min)} – {c.max == null ? '-' : formatMoney(c.max)}
-                    </Text>
+                    <View style={[styles.barTrack, { backgroundColor: tint.track }]}>
+                      <View
+                        style={[
+                          styles.barFill,
+                          { backgroundColor: tint.fill, width: `${(c.centroid / maxCentroid) * 100}%` },
+                        ]}
+                      />
+                    </View>
                     {expanded && (
-                      <View style={styles.memberList}>
+                      <View style={[styles.memberList, { borderTopColor: tint.track }]}>
                         {(c.members || []).length === 0 ? (
-                          <Text style={styles.clusterLine}>No members</Text>
+                          <Text style={[styles.memberName, { color: tint.text }]}>No members</Text>
                         ) : (
-                          c.members.map((m, i) => (
-                            <Text key={`${m}-${i}`} style={styles.memberName}>
+                          c.members.map((m, idx) => (
+                            <Text key={`${m}-${idx}`} style={[styles.memberName, { color: tint.text }]}>
                               • {m}
                             </Text>
                           ))
@@ -292,87 +334,102 @@ export default function DashboardScreen({ navigation, route }) {
                   </TouchableOpacity>
                 );
               })}
+              {iterations !== null && (
+                <Text style={styles.iterText}>K-Means converged in {iterations} iteration(s)</Text>
+              )}
+            </View>
+          ))}
+      </View>
 
-              <View style={styles.barCard}>
-                <Text style={styles.sectionTitle}>Average salary by tier</Text>
-                {clusters.map((c) => {
-                  const maxCentroid = Math.max(...clusters.map((x) => x.centroid), 1);
-                  return (
-                    <View key={c.group} style={styles.barRow}>
-                      <Text style={styles.barLabel}>{c.group}</Text>
-                      <View style={styles.barTrack}>
-                        <View style={[styles.barFill, { width: `${(c.centroid / maxCentroid) * 100}%` }]} />
-                      </View>
-                      <Text style={styles.barValue}>{formatMoney(c.centroid)}</Text>
-                    </View>
-                  );
-                })}
-                {iterations !== null && (
-                  <Text style={styles.iterText}>K-Means converged in {iterations} iteration(s)</Text>
-                )}
-              </View>
-            </>
-          )}
+      {/* Search + filters */}
+      <View style={styles.searchWrap}>
+        <Feather name="search" size={18} color={colors.muted} />
+        <TextInput
+          style={[styles.searchInput, webNoOutline]}
+          placeholder="Search by name or position"
+          placeholderTextColor={colors.muted}
+          value={query}
+          onChangeText={setQuery}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </View>
+      <View style={styles.filterRow}>
+        <View style={styles.segment}>
+          {['All', 'Active', 'On Leave'].map((f) => {
+            const on = statusFilter === f;
+            return (
+              <TouchableOpacity
+                key={f}
+                style={[styles.segmentItem, on && styles.segmentItemOn]}
+                onPress={() => setStatusFilter(f)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.segmentText, on && styles.segmentTextOn]}>{f}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
-      )}
+        <TouchableOpacity
+          style={[styles.sortBtn, sortDir && styles.sortBtnOn]}
+          onPress={cycleSort}
+          accessibilityLabel={`Sort by salary: ${sortDir || 'off'}`}
+          activeOpacity={0.8}
+        >
+          <Feather name={sortIcon} size={18} color={sortDir ? colors.onAccent : colors.ink} />
+        </TouchableOpacity>
+      </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Search by name or position"
-        value={query}
-        onChangeText={setQuery}
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
-      <View style={styles.chipRow}>
-        {['All', 'Active', 'On Leave'].map((f) => (
-          <TouchableOpacity
-            key={f}
-            style={[styles.chip, statusFilter === f && styles.chipActive]}
-            onPress={() => setStatusFilter(f)}
-          >
-            <Text style={[styles.chipText, statusFilter === f && styles.chipTextActive]}>{f}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-      <View style={styles.chipRow}>
-        {[
-          ['asc', 'Salary ↑'],
-          ['desc', 'Salary ↓'],
-        ].map(([dir, label]) => (
-          <TouchableOpacity
-            key={dir}
-            style={[styles.chip, sortDir === dir && styles.chipActive]}
-            onPress={() => setSortDir(sortDir === dir ? null : dir)}
-          >
-            <Text style={[styles.chipText, sortDir === dir && styles.chipTextActive]}>{label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      <Text style={[type.section, styles.listLabel]}>
+        Employees ({visibleEmployees.length}/{employees.length})
+      </Text>
     </View>
   );
 
   const renderItem = ({ item }) => {
     const active = item.status === 'Active';
+    const [avBg, avFg] = avatarColors(item.name);
     return (
-      <View style={styles.card}>
-        <View style={styles.itemHeader}>
-          <Text style={styles.name}>{item.name}</Text>
-          <View style={[styles.badge, { backgroundColor: active ? '#16a34a' : '#f59e0b' }]}>
-            <Text style={styles.badgeText}>{item.status}</Text>
+      <View style={styles.row}>
+        <View style={styles.rowTop}>
+          <View style={[styles.avatar, { backgroundColor: avBg }]}>
+            <Text style={[styles.avatarText, { color: avFg }]}>{initials(item.name)}</Text>
+          </View>
+          <View style={styles.rowMid}>
+            <Text style={styles.name} numberOfLines={1}>
+              {item.name}
+            </Text>
+            <Text style={styles.position} numberOfLines={1}>
+              {item.position}
+            </Text>
+          </View>
+          <View style={styles.rowRight}>
+            <Text style={styles.salary}>{formatMoney(item.salary)}</Text>
+            <View style={[styles.pill, { backgroundColor: active ? colors.activeBg : colors.leaveBg }]}>
+              <Text style={[styles.pillText, { color: active ? colors.activeText : colors.leaveText }]}>
+                {item.status}
+              </Text>
+            </View>
           </View>
         </View>
-        <Text style={styles.position}>{item.position}</Text>
-        <Text style={styles.salary}>{formatMoney(item.salary)}</Text>
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.toggleBtn} onPress={() => handleToggle(item.id)}>
-            <Text style={styles.btnText}>Toggle Status</Text>
+          <TouchableOpacity style={styles.ghostBtn} onPress={() => handleToggle(item.id)} activeOpacity={0.6}>
+            <Feather name="refresh-cw" size={14} color={colors.accent} />
+            <Text style={styles.ghostText} numberOfLines={1}>
+              Toggle Status
+            </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.editBtn} onPress={() => startEdit(item)}>
-            <Text style={styles.btnText}>Edit</Text>
+          <TouchableOpacity style={styles.ghostBtn} onPress={() => startEdit(item)} activeOpacity={0.6}>
+            <Feather name="edit-2" size={14} color={colors.accent} />
+            <Text style={styles.ghostText} numberOfLines={1}>
+              Edit
+            </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDelete(item.id)}>
-            <Text style={styles.btnText}>Delete</Text>
+          <TouchableOpacity style={styles.ghostBtn} onPress={() => handleDelete(item.id)} activeOpacity={0.6}>
+            <Feather name="trash-2" size={14} color={colors.danger} />
+            <Text style={[styles.ghostText, { color: colors.danger }]} numberOfLines={1}>
+              Delete
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -380,128 +437,307 @@ export default function DashboardScreen({ navigation, route }) {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      {loadingList ? (
-        <ActivityIndicator size="large" style={{ marginTop: 40 }} />
-      ) : (
-        <FlatList
-          data={visibleEmployees}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          ListHeaderComponent={renderHeader()}
-          ListEmptyComponent={<Text style={styles.empty}>
-              {employees.length === 0 ? 'No employees found.' : 'No employees match your filters.'}
-            </Text>}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={styles.list}
-        />
-      )}
-    </KeyboardAvoidingView>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        {loadingList ? (
+          <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: 64 }} />
+        ) : (
+          <FlatList
+            data={visibleEmployees}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            ListHeaderComponent={renderHeader()}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Feather name="users" size={32} color={colors.muted} />
+                <Text style={styles.emptyTitle}>No employees found</Text>
+              </View>
+            }
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
+            }
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.list}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
+
+        {/* Floating add button */}
+        <TouchableOpacity
+          style={[styles.fab, { bottom: Math.max(insets.bottom, spacing.md) + spacing.sm }]}
+          onPress={openAdd}
+          accessibilityLabel="Add Employee"
+          activeOpacity={0.85}
+        >
+          <Feather name="plus" size={28} color={colors.onAccent} />
+        </TouchableOpacity>
+      </KeyboardAvoidingView>
+
+      {/* Add / Edit bottom sheet */}
+      <Modal visible={formOpen} transparent animationType="slide" onRequestClose={closeForm}>
+        <KeyboardAvoidingView
+          style={styles.sheetWrap}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <Pressable style={styles.overlay} onPress={adding ? undefined : closeForm} />
+          <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, spacing.md) + spacing.sm }]}>
+            <View style={styles.handle} />
+            <Text style={styles.sheetTitle}>{editingId ? 'Edit Employee' : 'Add Employee'}</Text>
+
+            <Text style={styles.fieldLabel}>Name</Text>
+            <TextInput
+              style={[styles.field, webNoOutline]}
+              placeholder="Name"
+              placeholderTextColor={colors.muted}
+              value={name}
+              onChangeText={setName}
+            />
+            <Text style={styles.fieldLabel}>Position</Text>
+            <TextInput
+              style={[styles.field, webNoOutline]}
+              placeholder="Position"
+              placeholderTextColor={colors.muted}
+              value={position}
+              onChangeText={setPosition}
+            />
+            <Text style={styles.fieldLabel}>Salary</Text>
+            <TextInput
+              style={[styles.field, webNoOutline]}
+              placeholder="Salary"
+              placeholderTextColor={colors.muted}
+              keyboardType="numeric"
+              value={salary}
+              onChangeText={setSalary}
+            />
+
+            <View style={styles.sheetActions}>
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={closeForm}
+                disabled={adding}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.secondaryBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.primaryBtn, styles.saveBtn, adding && styles.disabled]}
+                onPress={handleSubmit}
+                disabled={adding}
+                activeOpacity={0.85}
+              >
+                {adding ? (
+                  <ActivityIndicator color={colors.onAccent} />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f4f6fa' },
-  list: { padding: 16, paddingBottom: 40 },
-  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  heading: { fontSize: 20, fontWeight: '700', color: '#1f2d3d' },
-  logoutBtn: { backgroundColor: '#6b7280', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
-  logoutText: { color: '#fff', fontWeight: '600' },
-  chipRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  chip: {
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    backgroundColor: '#e5e7eb',
+  safe: { flex: 1, backgroundColor: colors.bg },
+  flex: { flex: 1 },
+  flexShrink: { flexShrink: 1 },
+  list: { padding: spacing.md, paddingBottom: 112, width: '100%', maxWidth: 720, alignSelf: 'center' },
+
+  // header
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
+    gap: spacing.sm,
   },
-  chipActive: { backgroundColor: '#2563eb' },
-  chipText: { color: '#374151', fontWeight: '600', fontSize: 13 },
-  chipTextActive: { color: '#fff' },
-  summaryRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  summaryBox: {
+  date: { ...type.body, color: colors.muted, marginTop: spacing.xs },
+  iconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.control,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+
+  // hero
+  hero: { backgroundColor: colors.accent, borderRadius: radius.card, padding: spacing.lg, marginBottom: spacing.md },
+  heroLabel: { ...type.section, color: colors.onAccentMuted },
+  heroValue: { ...type.number, fontSize: 40, color: colors.onAccent, marginTop: spacing.sm },
+  heroStats: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  heroStat: {
     flex: 1,
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingVertical: 10,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: radius.control,
+    paddingVertical: spacing.sm + 4,
+    paddingHorizontal: spacing.sm + 4,
+  },
+  heroStatValue: { ...type.number, fontSize: 22, color: colors.onAccent },
+  heroStatLabel: { fontSize: 12, color: colors.onAccentMuted, marginTop: 2 },
+
+  // generic card + buttons
+  card: { ...cardStyle, padding: spacing.md, marginBottom: spacing.md },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
+  primaryBtn: {
+    backgroundColor: colors.accent,
+    height: 48,
+    borderRadius: radius.control,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e3e8ef',
+    justifyContent: 'center',
   },
-  summaryValue: { fontSize: 22, fontWeight: '700', color: '#1f2d3d' },
-  summaryLabel: { fontSize: 12, color: '#6b7280' },
-  payrollBox: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e3e8ef',
+  primaryBtnText: { color: colors.onAccent, fontSize: 15, fontWeight: '600' },
+  secondaryBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: radius.control,
     alignItems: 'center',
-  },
-  payrollValue: { fontSize: 22, fontWeight: '700', color: '#1d4ed8' },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 12,
+    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#e3e8ef',
+    borderColor: colors.border,
+    backgroundColor: colors.card,
   },
-  sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 10, color: '#1f2d3d' },
-  input: {
-    borderWidth: 1,
-    borderColor: '#d0d7e2',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 10,
-    fontSize: 15,
-    backgroundColor: '#fff',
-  },
-  primaryBtn: { backgroundColor: '#2563eb', padding: 12, borderRadius: 8, alignItems: 'center', minHeight: 44, justifyContent: 'center' },
-  analyzeBtn: { backgroundColor: '#7c3aed', padding: 14, borderRadius: 8, alignItems: 'center', marginBottom: 12, minHeight: 48, justifyContent: 'center' },
+  secondaryBtnText: { color: colors.ink, fontSize: 15, fontWeight: '600' },
+  saveBtn: { flex: 1 },
   disabled: { opacity: 0.6 },
-  btnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  itemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  name: { fontSize: 17, fontWeight: '700', color: '#1f2d3d', flexShrink: 1 },
-  badge: { paddingVertical: 3, paddingHorizontal: 10, borderRadius: 12 },
-  badgeText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  position: { color: '#4b5563', marginTop: 4 },
-  salary: { fontSize: 16, fontWeight: '600', marginTop: 4, color: '#111827' },
-  actions: { flexDirection: 'row', marginTop: 10, gap: 8 },
-  toggleBtn: { flex: 1, backgroundColor: '#0891b2', padding: 10, borderRadius: 8, alignItems: 'center' },
-  editBtn: { flex: 1, backgroundColor: '#475569', padding: 10, borderRadius: 8, alignItems: 'center' },
-  cancelBtn: { backgroundColor: '#6b7280', padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 8 },
-  deleteBtn: { flex: 1, backgroundColor: '#dc2626', padding: 10, borderRadius: 8, alignItems: 'center' },
-  clusterWrap: { marginBottom: 4 },
-  clusterCard: {
-    backgroundColor: '#f5f3ff',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#ddd6fe',
+
+  // tiers
+  tiers: { marginTop: spacing.md, gap: spacing.sm + 4 },
+  tierCard: { borderRadius: radius.card, borderWidth: 1, padding: spacing.md },
+  tierTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  tierName: { fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1, flex: 1 },
+  tierCount: { fontSize: 13, opacity: 0.85 },
+  tierAvg: { ...type.number, fontSize: 28, marginTop: spacing.sm },
+  tierSub: { fontSize: 12, opacity: 0.8 },
+  tierRange: { ...type.body, fontSize: 14, marginTop: spacing.sm, fontVariant: ['tabular-nums'] },
+  barTrack: { height: 8, borderRadius: 4, marginTop: spacing.sm + 4, overflow: 'hidden' },
+  barFill: { height: 8, borderRadius: 4 },
+  memberList: { marginTop: spacing.sm + 4, paddingTop: spacing.sm, borderTopWidth: 1 },
+  memberName: { fontSize: 14, marginTop: 2 },
+  iterText: { fontSize: 12, color: colors.muted, textAlign: 'center' },
+  emptyInline: { ...type.body, color: colors.muted, textAlign: 'center', marginTop: spacing.md },
+
+  // search + filters
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    ...cardStyle,
+    borderRadius: radius.control,
+    paddingHorizontal: spacing.md,
+    height: 48,
+    marginBottom: spacing.sm + 4,
   },
-  memberList: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#ddd6fe' },
-  memberName: { color: '#374151', marginTop: 2 },
-  barCard: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#e3e8ef',
+  searchInput: { flex: 1, fontSize: 15, color: colors.ink, height: '100%' },
+  filterRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  segment: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: '#ECE8E1',
+    borderRadius: radius.control,
+    padding: 4,
   },
-  barRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  barLabel: { width: 52, fontSize: 12, color: '#374151' },
-  barTrack: { flex: 1, height: 14, backgroundColor: '#ede9fe', borderRadius: 7, overflow: 'hidden', marginHorizontal: 8 },
-  barFill: { height: 14, backgroundColor: '#7c3aed', borderRadius: 7 },
-  barValue: { width: 62, fontSize: 12, textAlign: 'right', color: '#374151' },
-  iterText: { fontSize: 12, color: '#6b7280', marginTop: 4 },
-  clusterTitle: { fontSize: 16, fontWeight: '700', color: '#5b21b6', marginBottom: 4 },
-  clusterLine: { color: '#374151', marginTop: 2 },
-  empty: { textAlign: 'center', color: '#6b7280', marginVertical: 16 },
+  segmentItem: { flex: 1, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 8 },
+  segmentItemOn: { backgroundColor: colors.accent },
+  segmentText: { fontSize: 14, fontWeight: '600', color: colors.muted },
+  segmentTextOn: { color: colors.onAccent },
+  sortBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.control,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  sortBtnOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  listLabel: { marginTop: spacing.lg, marginBottom: spacing.sm + 4 },
+
+  // employee rows
+  row: { ...cardStyle, padding: spacing.md, marginBottom: spacing.sm + 4 },
+  rowTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm + 4 },
+  avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 15, fontWeight: '700' },
+  rowMid: { flex: 1 },
+  name: { fontSize: 16, fontWeight: '600', color: colors.ink },
+  position: { fontSize: 14, color: colors.muted, marginTop: 2 },
+  rowRight: { alignItems: 'flex-end', gap: 6 },
+  salary: { ...type.number, fontSize: 16, color: colors.ink },
+  pill: { paddingVertical: 3, paddingHorizontal: 10, borderRadius: radius.pill },
+  pillText: { fontSize: 12, fontWeight: '600' },
+  actions: {
+    flexDirection: 'row',
+    marginTop: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  ghostBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: spacing.sm,
+  },
+  ghostText: { fontSize: 13, fontWeight: '600', color: colors.accent, flexShrink: 1 },
+
+  // empty state
+  emptyState: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
+  emptyTitle: { ...type.body, color: colors.muted, fontWeight: '600' },
+
+  // FAB
+  fab: {
+    position: 'absolute',
+    right: spacing.lg,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // bottom sheet
+  sheetWrap: { flex: 1, justifyContent: 'flex-end' },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.overlay },
+  sheet: {
+    backgroundColor: colors.card,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: spacing.lg,
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: 'center',
+    marginBottom: spacing.md,
+  },
+  sheetTitle: { fontSize: 20, fontWeight: '700', color: colors.ink, marginBottom: spacing.md },
+  fieldLabel: { ...type.section, marginBottom: 6 },
+  field: {
+    height: 48,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.control,
+    paddingHorizontal: spacing.md,
+    fontSize: 15,
+    color: colors.ink,
+    backgroundColor: colors.bg,
+    marginBottom: spacing.md,
+  },
+  sheetActions: { flexDirection: 'row', gap: spacing.sm + 4, marginTop: spacing.sm },
 });
