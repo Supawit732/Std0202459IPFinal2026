@@ -73,21 +73,24 @@ app.get('/api/employees/salary-clusters', (req, res) => {
     return res.status(200).json({
       success: true,
       totalEmployees: 0,
+      iterations: 0,
       clusters: [],
       message: 'No employees to analyze',
     });
   }
 
   const salaries = employees.map((e) => e.salary);
-  const { centroids, assignments } = kmeans1D(salaries, 3);
+  const { centroids, assignments, iterations } = kmeans1D(salaries, 3);
 
   const clusters = centroids.map((centroid, idx) => {
-    const members = salaries.filter((_, i) => assignments[i] === idx);
+    const memberEmployees = employees.filter((_, i) => assignments[i] === idx);
+    const members = memberEmployees.map((e) => e.salary);
     return {
       centroid: Math.round(centroid),
       count: members.length,
       min: members.length ? Math.min(...members) : null,
       max: members.length ? Math.max(...members) : null,
+      members: memberEmployees.map((e) => e.name),
       _raw: centroid,
     };
   });
@@ -95,7 +98,9 @@ app.get('/api/employees/salary-clusters', (req, res) => {
   clusters.sort((a, b) => a._raw - b._raw);
   const result = clusters.map(({ _raw, ...c }, i) => ({ group: `Tier ${i + 1}`, ...c }));
 
-  res.status(200).json({ success: true, totalEmployees: employees.length, clusters: result });
+  res
+    .status(200)
+    .json({ success: true, totalEmployees: employees.length, iterations, clusters: result });
 });
 
 // Shared validation for create and edit. Returns { error } or { value }.
