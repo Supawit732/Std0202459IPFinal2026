@@ -26,7 +26,8 @@ export default function DashboardScreen({ navigation, route }) {
   const [name, setName] = useState('');
   const [position, setPosition] = useState('');
   const [salary, setSalary] = useState('');
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(false); // true while add/save request is in flight
+  const [editingId, setEditingId] = useState(null);
 
   const [analyzing, setAnalyzing] = useState(false);
   const [clusters, setClusters] = useState(null); // null = not analyzed yet
@@ -58,7 +59,21 @@ export default function DashboardScreen({ navigation, route }) {
     }
   };
 
-  const handleAdd = async () => {
+  const resetForm = () => {
+    setName('');
+    setPosition('');
+    setSalary('');
+    setEditingId(null);
+  };
+
+  const startEdit = (item) => {
+    setEditingId(item.id);
+    setName(item.name);
+    setPosition(item.position);
+    setSalary(String(item.salary));
+  };
+
+  const handleSubmit = async () => {
     const n = name.trim();
     const p = position.trim();
     const s = salary.trim();
@@ -73,15 +88,15 @@ export default function DashboardScreen({ navigation, route }) {
     }
     setAdding(true);
     try {
-      const data = await apiRequest('/api/employees', {
-        method: 'POST',
-        token,
-        body: { name: n, position: p, salary: salaryNum },
-      });
-      setEmployees((prev) => [...prev, data.data]);
-      setName('');
-      setPosition('');
-      setSalary('');
+      const body = { name: n, position: p, salary: salaryNum };
+      if (editingId) {
+        const data = await apiRequest(`/api/employees/${editingId}`, { method: 'PUT', token, body });
+        setEmployees((prev) => prev.map((e) => (e.id === editingId ? data.data : e)));
+      } else {
+        const data = await apiRequest('/api/employees', { method: 'POST', token, body });
+        setEmployees((prev) => [...prev, data.data]);
+      }
+      resetForm();
       setClusters(null); // previous analysis is now stale
     } catch (e) {
       notify('Error', e.message);
@@ -103,6 +118,7 @@ export default function DashboardScreen({ navigation, route }) {
     try {
       await apiRequest(`/api/employees/${id}`, { method: 'DELETE', token });
       setEmployees((prev) => prev.filter((e) => e.id !== id));
+      if (editingId === id) resetForm();
       setClusters(null);
     } catch (e) {
       notify('Error', e.message);
@@ -146,7 +162,7 @@ export default function DashboardScreen({ navigation, route }) {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Add Employee</Text>
+        <Text style={styles.sectionTitle}>{editingId ? 'Edit Employee' : 'Add Employee'}</Text>
         <TextInput style={styles.input} placeholder="Name" value={name} onChangeText={setName} />
         <TextInput
           style={styles.input}
@@ -163,11 +179,20 @@ export default function DashboardScreen({ navigation, route }) {
         />
         <TouchableOpacity
           style={[styles.primaryBtn, adding && styles.disabled]}
-          onPress={handleAdd}
+          onPress={handleSubmit}
           disabled={adding}
         >
-          {adding ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Add Employee</Text>}
+          {adding ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.btnText}>{editingId ? 'Save' : 'Add Employee'}</Text>
+          )}
         </TouchableOpacity>
+        {editingId && (
+          <TouchableOpacity style={styles.cancelBtn} onPress={resetForm} disabled={adding}>
+            <Text style={styles.btnText}>Cancel</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <TouchableOpacity
@@ -218,6 +243,9 @@ export default function DashboardScreen({ navigation, route }) {
         <View style={styles.actions}>
           <TouchableOpacity style={styles.toggleBtn} onPress={() => handleToggle(item.id)}>
             <Text style={styles.btnText}>Toggle Status</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.editBtn} onPress={() => startEdit(item)}>
+            <Text style={styles.btnText}>Edit</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDelete(item.id)}>
             <Text style={styles.btnText}>Delete</Text>
@@ -287,6 +315,8 @@ const styles = StyleSheet.create({
   salary: { fontSize: 16, fontWeight: '600', marginTop: 4, color: '#111827' },
   actions: { flexDirection: 'row', marginTop: 10, gap: 8 },
   toggleBtn: { flex: 1, backgroundColor: '#0891b2', padding: 10, borderRadius: 8, alignItems: 'center' },
+  editBtn: { flex: 1, backgroundColor: '#475569', padding: 10, borderRadius: 8, alignItems: 'center' },
+  cancelBtn: { backgroundColor: '#6b7280', padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 8 },
   deleteBtn: { flex: 1, backgroundColor: '#dc2626', padding: 10, borderRadius: 8, alignItems: 'center' },
   clusterWrap: { marginBottom: 4 },
   clusterCard: {
