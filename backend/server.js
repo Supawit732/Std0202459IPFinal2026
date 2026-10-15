@@ -98,28 +98,35 @@ app.get('/api/employees/salary-clusters', (req, res) => {
   res.status(200).json({ success: true, totalEmployees: employees.length, clusters: result });
 });
 
-app.post('/api/employees', (req, res) => {
-  const body = req.body || {};
+// Shared validation for create and edit. Returns { error } or { value }.
+function validateEmployeeInput(body) {
+  body = body || {};
   if (isBlank(body.name) || isBlank(body.position) || body.salary === undefined || body.salary === null) {
-    return res
-      .status(400)
-      .json({ success: false, message: 'Name, position and salary are required' });
+    return { error: 'Name, position and salary are required' };
   }
   const salary = parseSalary(body.salary);
   if (!Number.isFinite(salary) || salary <= 0) {
-    return res
-      .status(400)
-      .json({ success: false, message: 'Salary must be a positive number' });
+    return { error: 'Salary must be a positive number' };
   }
-  const employee = {
-    id: String(nextId++),
-    name: body.name.trim(),
-    position: body.position.trim(),
-    status: 'Active',
-    salary,
-  };
+  return { value: { name: body.name.trim(), position: body.position.trim(), salary } };
+}
+
+app.post('/api/employees', (req, res) => {
+  const { error, value } = validateEmployeeInput(req.body);
+  if (error) return res.status(400).json({ success: false, message: error });
+  const employee = { id: String(nextId++), ...value, status: 'Active' };
   employees.push(employee);
   res.status(201).json({ success: true, data: employee });
+});
+
+// Edit name/position/salary (status is changed only via the /status route).
+app.put('/api/employees/:id', (req, res) => {
+  const emp = employees.find((e) => e.id === req.params.id);
+  if (!emp) return res.status(404).json({ success: false, message: 'Employee not found' });
+  const { error, value } = validateEmployeeInput(req.body);
+  if (error) return res.status(400).json({ success: false, message: error });
+  Object.assign(emp, value);
+  res.status(200).json({ success: true, data: emp });
 });
 
 app.put('/api/employees/:id/status', (req, res) => {
